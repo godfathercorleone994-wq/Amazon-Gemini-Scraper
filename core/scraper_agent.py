@@ -520,4 +520,5 @@ class ScraperAgent:
         logger.info(f"Scraper session closed: {self.session_id}")
 
 class ScraperPool:
-    """Manage pool of scrap
+    """Manage pool of scrapers for concurrent operations"""
+    pass
