@@ -625,8 +625,7 @@ class PriceTracker:
         alerts_triggered = []
         
         try:
-
-# Verifica alerta de preço alvo
+            # Verifica alerta de preço alvo
             if product.has_alert and product.alert_price:
                 if new_price <= product.alert_price and old_price > product.alert_price:
                     alert_type = "target_price_reached"
@@ -647,7 +646,7 @@ class PriceTracker:
                 alert_type = "significant_price_drop"
                 alerts_triggered.append(alert_type)
             
-         await self._trigger_price_alert(
+                await self._trigger_price_alert(
                     product,
                     alert_type,
                     old_price,
@@ -669,8 +668,7 @@ class PriceTracker:
                         new_price
                     )
 
-
-logger.info(
+            logger.info(
                 f"Alertas verificados para {product.asin}",
                 alerts_triggered=alerts_triggered
             )
@@ -696,9 +694,7 @@ logger.info(
             old_price: Preço anterior
             new_price: Novo preço
         """
-      
-
-try:
+        try:
             # Prepara dados do alerta
             alert_data = {
                 "alert_type": alert_type,
@@ -717,9 +713,8 @@ try:
                 event_type="price_alert",
                 data=alert_data
             )
-  
 
-# Aqui você também pode enviar email, Telegram, etc.
+            # Aqui você também pode enviar email, Telegram, etc.
             # Exemplo:
             # await email_sender.send_price_alert(...)
             # await telegram_bot.send_price_alert(...)

@@ -596,7 +596,7 @@ class WebhookManager:
                 await redis.expire(key, period)
             
             # Verifica limite
-      if current > limit:
+            if current > limit:
                 logger.warning(
                     f"Rate limit excedido para {domain}: {current}/{limit}"
                 )
@@ -616,7 +616,7 @@ class WebhookManager:
         status_code: Optional[int] = None,
         last_error: Optional[str] = None
     ):
-      """
+        """
         Atualiza estatísticas do webhook
         
         Args:
@@ -639,7 +639,7 @@ class WebhookManager:
             
             if success:
                 update["$inc"]["successful_calls"] = 1
-              else:
+            else:
                 update["$inc"]["failed_calls"] = 1
                 if last_error:
                     update["$set"]["last_error"] = last_error

@@ -613,7 +613,7 @@ Use /list para ver seus produtos.
             ... )
         """
         if not self.bot:
-          logger.error("Bot do Telegram não inicializado")
+            logger.error("Bot do Telegram não inicializado")
             return False
         
         try:
@@ -635,8 +635,8 @@ Use /list para ver seus produtos.
                     parse_mode=parse_mode,
                     disable_notification=disable_notification,
                     reply_markup=reply_markup
-          )
-              logger.info(f"Mensagem enviada para Telegram chat {chat_id}")
+                )
+                logger.info(f"Mensagem enviada para Telegram chat {chat_id}")
             return True
             
         except Exception as e:
@@ -660,7 +660,7 @@ Use /list para ver seus produtos.
         """
         # Calcula economia
         savings = 0
-      if product_data.get("old_price") and product_data.get("new_price"):
+        if product_data.get("old_price") and product_data.get("new_price"):
             old = float(product_data["old_price"])
             new = float(product_data["new_price"])
             savings = old - new
