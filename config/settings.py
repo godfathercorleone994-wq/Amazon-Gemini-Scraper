@@ -2,21 +2,24 @@
 Configuration settings for Amazon Gemini Scraper
 """
 from typing import Optional, List
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, validator
+from pydantic import BaseModel, Field, validator
 from functools import lru_cache
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
-class Settings(BaseSettings):
+# Load environment variables from .env file
+load_dotenv()
+
+class Settings(BaseModel):
     """Application settings with validation"""
     
     # Application
     app_name: str = Field(default="Amazon-Gemini-Scraper")
     app_version: str = Field(default="1.0.0")
-    environment: str = Field(default="development")
-    debug: bool = Field(default=False)
-    secret_key: str = Field(default="change-me-in-production")
+    environment: str = Field(default_factory=lambda: os.getenv("ENVIRONMENT", "development"))
+    debug: bool = Field(default_factory=lambda: os.getenv("DEBUG", "False").lower() == "true")
+    secret_key: str = Field(default_factory=lambda: os.getenv("SECRET_KEY", "change-me-in-production"))
     api_prefix: str = Field(default="/api/v1")
     
     # Server
@@ -26,38 +29,38 @@ class Settings(BaseSettings):
     reload: bool = Field(default=False)
     
     # Database
-    mongodb_atlas_uri: str = Field(default="mongodb://localhost:27017")
+    mongodb_atlas_uri: str = Field(default_factory=lambda: os.getenv("MONGODB_ATLAS_URI", "mongodb://localhost:27017"))
     mongodb_database: str = Field(default="amazon_scraper")
     mongodb_max_connections: int = Field(default=100)
     mongodb_min_connections: int = Field(default=10)
     
     # Redis
-    redis_url: str = Field(default="redis://localhost:6379/0")
+    redis_url: str = Field(default_factory=lambda: os.getenv("REDIS_URL", "redis://localhost:6379/0"))
     redis_ttl: int = Field(default=3600)  # 1 hour
     redis_max_connections: int = Field(default=50)
     
     # AI APIs
-    gemini_api_key: Optional[str] = Field(default=None)
-    openai_api_key: Optional[str] = Field(default=None)
-    huggingface_api_key: Optional[str] = Field(default=None)
+    gemini_api_key: Optional[str] = Field(default_factory=lambda: os.getenv("GEMINI_API_KEY"))
+    openai_api_key: Optional[str] = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY"))
+    huggingface_api_key: Optional[str] = Field(default_factory=lambda: os.getenv("HUGGINGFACE_API_KEY"))
     ai_timeout: int = Field(default=30)
     ai_max_retries: int = Field(default=3)
     ai_model_gemini: str = Field(default="gemini-pro")
     ai_model_openai: str = Field(default="gpt-4-turbo-preview")
     
     # AWS
-    aws_access_key_id: Optional[str] = Field(default=None)
-    aws_secret_access_key: Optional[str] = Field(default=None)
+    aws_access_key_id: Optional[str] = Field(default_factory=lambda: os.getenv("AWS_ACCESS_KEY_ID"))
+    aws_secret_access_key: Optional[str] = Field(default_factory=lambda: os.getenv("AWS_SECRET_ACCESS_KEY"))
     aws_region: str = Field(default="us-east-1")
-    s3_bucket_name: Optional[str] = Field(default=None)
+    s3_bucket_name: Optional[str] = Field(default_factory=lambda: os.getenv("S3_BUCKET_NAME"))
     
     # Notifications
-    telegram_bot_token: Optional[str] = Field(default=None)
+    telegram_bot_token: Optional[str] = Field(default_factory=lambda: os.getenv("TELEGRAM_BOT_TOKEN"))
     telegram_chat_ids: List[str] = Field(default_factory=list)
-    sendgrid_api_key: Optional[str] = Field(default=None)
+    sendgrid_api_key: Optional[str] = Field(default_factory=lambda: os.getenv("SENDGRID_API_KEY"))
     email_from: str = Field(default="noreply@scraper.com")
     email_admin: List[str] = Field(default_factory=list)
-    discord_webhook_url: Optional[str] = Field(default=None)
+    discord_webhook_url: Optional[str] = Field(default_factory=lambda: os.getenv("DISCORD_WEBHOOK_URL"))
     
     # Rate Limiting
     api_rate_limit: int = Field(default=100)
@@ -75,14 +78,14 @@ class Settings(BaseSettings):
     retry_delay: int = Field(default=5)  # seconds
     
     # Celery
-    celery_broker_url: str = Field(default="redis://localhost:6379/1")
+    celery_broker_url: str = Field(default_factory=lambda: os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/1"))
     celery_result_backend: str = Field(default="redis://localhost:6379/2")
     celery_task_time_limit: int = Field(default=300)  # 5 minutes
     celery_task_soft_time_limit: int = Field(default=240)  # 4 minutes
     celery_worker_concurrency: int = Field(default=4)
     
     # Monitoring
-    sentry_dsn: Optional[str] = Field(default=None)
+    sentry_dsn: Optional[str] = Field(default_factory=lambda: os.getenv("SENTRY_DSN"))
     prometheus_enabled: bool = Field(default=True)
     log_level: str = Field(default="INFO")
     log_file: str = Field(default="logs/app.log")
@@ -107,12 +110,8 @@ class Settings(BaseSettings):
     enable_dashboard: bool = Field(default=True)
     enable_webhooks: bool = Field(default=True)
     
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore"
-    )
+    class Config:
+        extra = "ignore"
     
     @validator("proxy_list", pre=True)
     def parse_proxy_list(cls, v):
