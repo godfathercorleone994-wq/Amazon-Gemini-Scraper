@@ -1,7 +1,6 @@
 fastapi==0.95.2
 uvicorn==0.20.0
 pydantic==1.10.13
-pydantic-settings==0.2.5
 pymongo==4.5.0
 motor==3.3.2
 redis==5.0.1

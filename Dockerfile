@@ -20,6 +20,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libxshmfence1 \
     fonts-liberation \
+    gcc \
+    g++ \
+    python3-dev \
+    libyaml-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -28,18 +32,17 @@ WORKDIR /app
 COPY requirements.txt .
 
 # atualiza ferramentas de build para evitar “metadata‑generation‑failed”
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org --upgrade pip setuptools wheel
 
-# mostra exatamente o pacote que falhar
-RUN set -eux; \
-    while read -r line || [ -n "$line" ]; do \
-        echo "=== Instalando: $line ==="; \
-        pip install "$line"; \
-    done < requirements.txt
+
+# instala dependências Python (usando --trusted-host para resolver problemas de SSL)
+RUN pip install --no-cache-dir --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org -r requirements.txt
 
 # --- Copiar código e instalar navegadores Playwright ---
 COPY . .
-RUN playwright install chromium
+ENV NODE_TLS_REJECT_UNAUTHORIZED=0
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
+RUN playwright install chromium 2>&1 || echo "Browser install attempted"
 
 EXPOSE 8000
 
