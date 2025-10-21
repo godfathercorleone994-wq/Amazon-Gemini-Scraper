@@ -2,8 +2,7 @@
 Configuration settings for Amazon Gemini Scraper
 """
 from typing import Optional, List
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, validator
+from pydantic import BaseSettings, Field, validator
 from functools import lru_cache
 import os
 from pathlib import Path
@@ -114,12 +113,11 @@ class Settings(BaseSettings):
     enable_dashboard: bool = Field(default=True)
     enable_webhooks: bool = Field(default=True)
     
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore"
-    )
+    class Config:
+        env_file = ".env"
+        env_file_encoding = "utf-8"
+        case_sensitive = False
+        extra = "ignore"
     
     @validator("proxy_list", pre=True)
     def parse_proxy_list(cls, v):

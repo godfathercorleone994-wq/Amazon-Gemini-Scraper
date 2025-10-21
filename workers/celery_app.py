@@ -31,8 +31,7 @@ celery_app.conf.update(
 def check_all_prices():
     """Tarefa periódica: verifica todos os preços rastreados"""
     logger.info("🚀 Iniciando verificação de preços em lote")
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(_check_all_prices_async())
+    asyncio.run(_check_all_prices_async())
 
 async def _check_all_prices_async():
     tracker = PriceTracker()
