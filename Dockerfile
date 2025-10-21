@@ -20,6 +20,38 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libxshmfence1 \
     fonts-liberation \
+    fonts-unifont \
+    libx11-6 \
+    libx11-xcb1 \
+    libxcb1 \
+    libxext6 \
+    libxrender1 \
+    libxtst6 \
+    libxi6 \
+    libpangocairo-1.0-0 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libdbus-1-3 \
+    libglib2.0-0 \
+    libegl1 \
+    libnotify4 \
+    libgstreamer1.0-0 \
+    libgstreamer-plugins-base1.0-0 \
+    libopus0 \
+    libwoff1 \
+    libharfbuzz-icu0 \
+    libhyphen0 \
+    libmanette-0.2-0 \
+    libgles2 \
+    gstreamer1.0-libav \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-good \
+    libenchant-2-2 \
+    libsecret-1-0 \
+    libvpx9 \
+    libevdev2 \
+    libxkbfile1 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
