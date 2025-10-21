@@ -35,9 +35,9 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir --trusted-host pypi.org --trusted-host files.pythonhosted.org -r requirements.txt
 
-# Install Playwright browsers
-# Note: Installing chromium with dependencies for system use
-RUN playwright install-deps chromium
+# Install Playwright browsers (optional - can be installed at runtime if needed)
+# Note: Some font dependencies may not be available in slim image
+RUN playwright install-deps chromium || echo "Warning: Some Playwright dependencies could not be installed. Browser will be installed at runtime if needed."
 
 # Copy application code
 COPY . .
