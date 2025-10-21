@@ -1,20 +1,11 @@
 FROM python:3.11-slim
 
-# Set working directory
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# --- Sistema básico + dependências Playwright ---
+RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
-    gnupg \
     curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Chrome dependencies for Playwright
-RUN apt-get update && apt-get install -y \
+    gnupg \
     libnss3 \
-    libnspr4 \
-    libdbus-1-3 \
     libatk1.0-0 \
     libatk-bridge2.0-0 \
     libcups2 \
@@ -27,26 +18,29 @@ RUN apt-get update && apt-get install -y \
     libxrandr2 \
     libgbm1 \
     libasound2 \
-    && rm -rf /var/lib/apt/lists/*
+    libxshmfence1 \
+    fonts-liberation \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
+WORKDIR /app
+
+# --- Copiar e instalar dependências Python ---
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# atualiza ferramentas de build para evitar “metadata‑generation‑failed”
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install Playwright browsers
+# mostra exatamente o pacote que falhar
+RUN set -eux; \
+    while read -r line || [ -n "$line" ]; do \
+        echo "=== Instalando: $line ==="; \
+        pip install "$line"; \
+    done < requirements.txt
+
+# --- Copiar código e instalar navegadores Playwright ---
+COPY . .
 RUN playwright install chromium
 
-# Copy application code
-COPY . .
-
-# Create non-root user
-RUN useradd -m -u 1000 scraper && chown -R scraper:scraper /app
-USER scraper
-
-# Expose port
 EXPOSE 8000
 
-# Run the application
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
