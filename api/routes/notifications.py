@@ -26,7 +26,7 @@ class CreateNotificationRequest(BaseModel):
     channels: List[NotificationChannel] = Field(..., min_items=1)
     recipients: List[str] = Field(..., min_items=1, description="Email addresses, chat IDs, etc.")
     priority: NotificationPriority = Field(default=NotificationPriority.MEDIUM)
-    product_asin: Optional[str] = Field(None, regex="^[A-Z0-9]{10}$")
+    product_asin: Optional[str] = Field(None, pattern="^[A-Z0-9]{10}$")
     scheduled_for: Optional[datetime] = None
     
     class Config:
@@ -44,7 +44,7 @@ class CreateNotificationRequest(BaseModel):
 
 class PriceAlertRequest(BaseModel):
     """Price alert configuration"""
-    asin: str = Field(..., regex="^[A-Z0-9]{10}$")
+    asin: str = Field(..., pattern="^[A-Z0-9]{10}$")
     target_price: float = Field(..., gt=0)
     email: Optional[EmailStr] = None
     telegram_chat_id: Optional[str] = None

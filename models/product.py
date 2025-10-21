@@ -63,7 +63,7 @@ class Product(BaseModel):
     """Complete product model"""
     # Identifiers
     id: Optional[str] = Field(default=None, alias="_id")
-    asin: str = Field(..., regex="^[A-Z0-9]{10}$")
+    asin: str = Field(..., pattern="^[A-Z0-9]{10}$")
     url: HttpUrl
     
     # Basic Info
@@ -75,7 +75,7 @@ class Product(BaseModel):
     # Pricing
     current_price: float = Field(..., ge=0)
     original_price: Optional[float] = Field(None, ge=0)
-    currency: str = Field(default="USD", regex="^[A-Z]{3}$")
+    currency: str = Field(default="USD", pattern="^[A-Z]{3}$")
     price_history: List[PriceHistory] = Field(default_factory=list)
     
     # Availability

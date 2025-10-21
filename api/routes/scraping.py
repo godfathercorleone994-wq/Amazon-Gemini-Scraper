@@ -379,7 +379,7 @@ async def scrape_search(request: SearchRequest):
 
 @router.get("/product/{asin}", response_model=Product)
 async def get_product(
-    asin: str = Path(..., description="Amazon ASIN", regex="^[A-Z0-9]{10}$")
+    asin: str = Path(..., description="Amazon ASIN", pattern="^[A-Z0-9]{10}$")
 ):
     """
     Get product by ASIN
@@ -427,7 +427,7 @@ async def list_products(
     min_price: Optional[float] = Query(None, ge=0, description="Minimum price"),
     max_price: Optional[float] = Query(None, ge=0, description="Maximum price"),
     sort_by: str = Query("scraped_at", description="Field to sort by"),
-    sort_order: str = Query("desc", regex="^(asc|desc)$", description="Sort order")
+    sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order")
 ):
     """
     List products with filters and pagination
@@ -491,7 +491,7 @@ async def list_products(
 
 @router.delete("/product/{asin}")
 async def delete_product(
-    asin: str = Path(..., description="Amazon ASIN", regex="^[A-Z0-9]{10}$")
+    asin: str = Path(..., description="Amazon ASIN", pattern="^[A-Z0-9]{10}$")
 ):
     """
     Delete product by ASIN
