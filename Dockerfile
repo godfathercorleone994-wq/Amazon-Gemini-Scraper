@@ -1,6 +1,11 @@
 FROM python:3.11-slim
 
-# --- Sistema básico + dependências Playwright ---
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PORT=8000
+
+# Install system dependencies for Playwright
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     curl \
@@ -24,23 +29,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# --- Copiar e instalar dependências Python ---
+# Copy and install Python dependencies
 COPY requirements.txt .
 
-# atualiza ferramentas de build para evitar “metadata‑generation‑failed”
+# Update build tools to avoid metadata-generation-failed errors
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# mostra exatamente o pacote que falhar
-RUN set -eux; \
-    while read -r line || [ -n "$line" ]; do \
-        echo "=== Instalando: $line ==="; \
-        pip install "$line"; \
-    done < requirements.txt
+# Install all requirements at once for better caching
+RUN pip install --no-cache-dir -r requirements.txt
 
-# --- Copiar código e instalar navegadores Playwright ---
+# Copy application code and install Playwright browsers
 COPY . .
-RUN playwright install chromium
+RUN playwright install chromium && \
+    playwright install-deps chromium
 
-EXPOSE 8000
+# Create logs directory
+RUN mkdir -p /app/logs && chmod 777 /app/logs
 
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE ${PORT}
+
+# Use shell form to allow environment variable expansion
+CMD uvicorn api.main:app --host 0.0.0.0 --port ${PORT}

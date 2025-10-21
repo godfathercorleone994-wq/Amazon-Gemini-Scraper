@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     workers: int = Field(default=4)
     reload: bool = Field(default=False)
     
+    @validator("port", pre=True)
+    def parse_port(cls, v):
+        """Parse PORT from environment (for Render deployment)"""
+        if isinstance(v, str):
+            return int(v)
+        return v
+    
     # Database
     mongodb_atlas_uri: str = Field(default="mongodb://localhost:27017")
     mongodb_database: str = Field(default="amazon_scraper")

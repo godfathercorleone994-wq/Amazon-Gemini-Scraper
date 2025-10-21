@@ -1,0 +1,128 @@
+services:
+  # Web Service (FastAPI)
+  - type: web
+    name: amazon-gemini-scraper
+    env: python
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: |
+      pip install --upgrade pip setuptools wheel
+      pip install -r requirements.txt
+      playwright install chromium
+      playwright install-deps
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      - key: LOG_LEVEL
+        value: INFO
+      
+      # Database (MongoDB Atlas - must be configured separately)
+      - key: MONGODB_ATLAS_URI
+        sync: false
+      - key: MONGODB_DATABASE
+        value: amazon_scraper
+      
+      # Redis (must be configured separately)
+      - key: REDIS_URL
+        sync: false
+      
+      # API Keys (must be configured in Render dashboard)
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: HUGGINGFACE_API_KEY
+        sync: false
+      
+      # AWS (optional)
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        value: us-east-1
+      - key: S3_BUCKET_NAME
+        sync: false
+      
+      # Notifications (optional)
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_IDS
+        sync: false
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        value: noreply@scraper.com
+      - key: DISCORD_WEBHOOK_URL
+        sync: false
+      
+      # Security
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      
+      # Celery (if using background workers)
+      - key: CELERY_BROKER_URL
+        sync: false
+      - key: CELERY_RESULT_BACKEND
+        sync: false
+      
+      # Features
+      - key: ENABLE_ML_FEATURES
+        value: true
+      - key: ENABLE_NOTIFICATIONS
+        value: true
+      - key: ENABLE_DASHBOARD
+        value: false
+      - key: ENABLE_WEBHOOKS
+        value: true
+      
+      # Monitoring (optional)
+      - key: SENTRY_DSN
+        sync: false
+      - key: PROMETHEUS_ENABLED
+        value: true
+    
+    healthCheckPath: /api/v1/health/live
+    
+    # Autoscaling (paid plans only)
+    # autoDeploy: true
+    
+    # Disk storage (if needed)
+    # disk:
+    #   name: data
+    #   mountPath: /app/data
+    #   sizeGB: 1
+
+# Optional: Background Worker Service (for Celery)
+# Uncomment if you need background task processing
+# - type: worker
+#   name: amazon-scraper-worker
+#   env: python
+#   region: oregon
+#   plan: free
+#   branch: main
+#   buildCommand: |
+#     pip install --upgrade pip setuptools wheel
+#     pip install -r requirements.txt
+#   startCommand: celery -A workers.celery_app worker --loglevel=info
+#   envVars:
+#     - fromService:
+#         type: web
+#         name: amazon-gemini-scraper
+#         envVarKey: MONGODB_ATLAS_URI
+#     - fromService:
+#         type: web
+#         name: amazon-gemini-scraper
+#         envVarKey: REDIS_URL
+#     - fromService:
+#         type: web
+#         name: amazon-gemini-scraper
+#         envVarKey: CELERY_BROKER_URL
