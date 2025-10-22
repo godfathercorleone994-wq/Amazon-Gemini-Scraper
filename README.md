@@ -145,7 +145,8 @@ After deployment:
 
 ## Render Deployment 🚀
 
-For detailed deployment instructions, see [RENDER_DEPLOYMENT.md](RENDER_DEPLOYMENT.md).
+**Quick Start**: See [RENDER_QUICKSTART.md](RENDER_QUICKSTART.md) for 5-minute deployment guide.  
+**Full Guide**: See [RENDER_DEPLOYMENT.md](RENDER_DEPLOYMENT.md) for detailed instructions.
 
 ### Quick Start with Render
 
@@ -180,6 +181,7 @@ For detailed deployment instructions, see [RENDER_DEPLOYMENT.md](RENDER_DEPLOYME
 - `render.yaml` - Infrastructure as Code configuration
 - `Dockerfile` - Docker build configuration
 - `RENDER_DEPLOYMENT.md` - Complete deployment guide
+- `RENDER_QUICKSTART.md` - 5-minute quick start guide
 
 **Important**: See [RENDER_DEPLOYMENT.md](RENDER_DEPLOYMENT.md) for complete instructions, troubleshooting, and best practices.
 
