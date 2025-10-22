@@ -13,6 +13,7 @@ Advanced Amazon Product Scraper with AI-powered extraction using Google Gemini, 
 - 🗄️ MongoDB for data persistence
 - 🚀 Redis caching for performance
 - 🎨 Streamlit dashboard for visualization
+- 🔄 Automated CI/CD with GitHub Actions
 
 ## Tech Stack
 
@@ -23,6 +24,7 @@ Advanced Amazon Product Scraper with AI-powered extraction using Google Gemini, 
 - **Task Queue**: Celery
 - **Monitoring**: Prometheus, Sentry
 - **Deployment**: Docker, Railway
+- **CI/CD**: GitHub Actions
 
 ## Quick Start
 
@@ -272,6 +274,20 @@ Check:
 - Redis service is running
 - Firewall allows connection
 
+## CI/CD and Testing
+
+This project includes comprehensive GitHub Actions workflows for automated testing and deployment validation.
+
+### Available Workflows
+
+- **Deployment Testing**: Validates Docker builds, application health, and deployment readiness
+- **Railway Preview**: Provides preview deployment information
+- **Health Check**: Monitors production deployment health
+
+For detailed information, see:
+- 📖 [Quick Start Guide](.github/QUICKSTART.md)
+- 📖 [Complete Workflows Documentation](.github/WORKFLOWS.md)
+
 ## Contributing
 
 1. Fork the repository
@@ -279,6 +295,8 @@ Check:
 3. Commit your changes
 4. Push to the branch
 5. Create a Pull Request
+
+**Note**: GitHub Actions will automatically test your changes!
 
 ## License
 

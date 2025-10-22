@@ -1,0 +1,428 @@
+name: Deployment Testing
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Job 1: Validate configuration files
+  validate-config:
+    name: Validate Configuration
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Validate Dockerfile
+        run: |
+          echo "✓ Checking Dockerfile syntax..."
+          docker run --rm -i hadolint/hadolint < Dockerfile || true
+      
+      - name: Validate docker-compose.yml
+        run: |
+          echo "✓ Validating docker-compose.yml..."
+          docker-compose config > /dev/null
+      
+      - name: Validate Railway configuration
+        run: |
+          echo "✓ Checking railway.json..."
+          if [ -f railway.json ]; then
+            cat railway.json | python3 -m json.tool > /dev/null
+            echo "railway.json is valid JSON"
+          else
+            echo "railway.json not found"
+            exit 1
+          fi
+      
+      - name: Check required files
+        run: |
+          echo "✓ Checking required files..."
+          files=("requirements.txt" "Dockerfile" ".env.example" "Procfile" "api/main.py")
+          for file in "${files[@]}"; do
+            if [ -f "$file" ]; then
+              echo "✓ $file exists"
+            else
+              echo "✗ $file missing"
+              exit 1
+            fi
+          done
+      
+      - name: Validate environment variables
+        run: |
+          echo "✓ Checking .env.example completeness..."
+          if [ -f .env.example ]; then
+            echo "Required variables in .env.example:"
+            grep -E "^[A-Z_]+=" .env.example | cut -d= -f1 | sort
+          fi
+
+  # Job 2: Test Docker Build
+  docker-build:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+    needs: validate-config
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: amazon-scraper:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+      
+      - name: Check image size
+        run: |
+          docker images amazon-scraper:test --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
+          SIZE=$(docker images amazon-scraper:test --format "{{.Size}}")
+          echo "Image size: $SIZE"
+
+  # Job 3: Test Application Startup
+  test-application:
+    name: Application Health Test
+    runs-on: ubuntu-latest
+    needs: docker-build
+    
+    services:
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+      
+      mongodb:
+        image: mongo:7.0
+        env:
+          MONGO_INITDB_ROOT_USERNAME: admin
+          MONGO_INITDB_ROOT_PASSWORD: password
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand(\"ping\")' || mongo --eval 'db.adminCommand(\"ping\")'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 27017:27017
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Install Playwright browsers
+        run: |
+          playwright install chromium --with-deps
+      
+      - name: Create test environment file
+        run: |
+          cat > .env << EOF
+          ENVIRONMENT=test
+          DEBUG=True
+          SECRET_KEY=test-secret-key-for-ci
+          PORT=8000
+          MONGODB_ATLAS_URI=mongodb://admin:password@localhost:27017/?authSource=admin
+          REDIS_URL=redis://localhost:6379/0
+          CELERY_BROKER_URL=redis://localhost:6379/1
+          CELERY_RESULT_BACKEND=redis://localhost:6379/2
+          GEMINI_API_KEY=test-key
+          ENABLE_ML_FEATURES=False
+          ENABLE_NOTIFICATIONS=False
+          ENABLE_DASHBOARD=False
+          ENABLE_WEBHOOKS=False
+          EOF
+      
+      - name: Start application in background
+        run: |
+          uvicorn api.main:app --host 0.0.0.0 --port 8000 &
+          APP_PID=$!
+          echo "APP_PID=$APP_PID" >> $GITHUB_ENV
+          
+          # Wait for app to start
+          echo "Waiting for application to start..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8000/ > /dev/null; then
+              echo "Application started successfully!"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Application failed to start"
+              exit 1
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 2
+          done
+      
+      - name: Test health endpoints
+        run: |
+          echo "Testing root endpoint..."
+          curl -f http://localhost:8000/ || exit 1
+          
+          echo "Testing health endpoint..."
+          curl -f http://localhost:8000/api/v1/health || exit 1
+          
+          echo "Testing liveness probe..."
+          curl -f http://localhost:8000/api/v1/health/live || exit 1
+          
+          echo "Testing readiness probe..."
+          curl -s http://localhost:8000/api/v1/health/ready || true
+          
+          echo "Testing API info..."
+          curl -f http://localhost:8000/api/v1/info || exit 1
+      
+      - name: Test API documentation
+        run: |
+          echo "Testing Swagger UI..."
+          curl -f http://localhost:8000/api/v1/docs || exit 1
+          
+          echo "Testing OpenAPI schema..."
+          curl -f http://localhost:8000/api/v1/openapi.json || exit 1
+      
+      - name: Stop application
+        if: always()
+        run: |
+          if [ ! -z "$APP_PID" ]; then
+            kill $APP_PID || true
+          fi
+
+  # Job 4: Test Docker Compose
+  test-docker-compose:
+    name: Docker Compose Test
+    runs-on: ubuntu-latest
+    needs: docker-build
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Create test environment file
+        run: |
+          cat > .env << EOF
+          ENVIRONMENT=test
+          DEBUG=True
+          SECRET_KEY=test-secret-key
+          MONGODB_ATLAS_URI=mongodb://admin:password@mongodb:27017/?authSource=admin
+          REDIS_URL=redis://redis:6379/0
+          CELERY_BROKER_URL=redis://redis:6379/1
+          CELERY_RESULT_BACKEND=redis://redis:6379/2
+          GEMINI_API_KEY=test-key
+          EOF
+      
+      - name: Build with Docker Compose (skip Playwright)
+        run: |
+          # Temporarily modify Dockerfile to skip Playwright for faster build
+          cp Dockerfile Dockerfile.backup
+          sed -i 's/ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0/ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1/g' Dockerfile
+          docker-compose build app
+          mv Dockerfile.backup Dockerfile
+      
+      - name: Start services
+        run: |
+          docker-compose up -d redis mongodb
+          sleep 10
+      
+      - name: Run application container
+        run: |
+          docker-compose up -d app
+          sleep 15
+      
+      - name: Check container status
+        run: |
+          docker-compose ps
+          docker-compose logs app
+      
+      - name: Test health from container
+        run: |
+          # Try to reach the app
+          for i in {1..10}; do
+            if docker-compose exec -T app curl -f http://localhost:8000/api/v1/health; then
+              echo "Health check passed!"
+              break
+            fi
+            if [ $i -eq 10 ]; then
+              echo "Health check failed"
+              docker-compose logs app
+              exit 1
+            fi
+            sleep 3
+          done
+      
+      - name: Cleanup
+        if: always()
+        run: docker-compose down -v
+
+  # Job 5: Dependency Security Check
+  security-check:
+    name: Security Dependency Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install safety
+        run: pip install safety
+      
+      - name: Check dependencies for vulnerabilities
+        run: |
+          echo "Checking for known security vulnerabilities..."
+          safety check --file requirements.txt --output text || true
+      
+      - name: Check for outdated packages
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt || true
+
+  # Job 6: Railway Deployment Readiness
+  railway-readiness:
+    name: Railway Deployment Check
+    runs-on: ubuntu-latest
+    needs: [validate-config, test-application]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Check Railway files
+        run: |
+          echo "Checking Railway deployment files..."
+          
+          if [ -f railway.json ]; then
+            echo "✓ railway.json found"
+            cat railway.json
+          else
+            echo "✗ railway.json missing"
+          fi
+          
+          if [ -f Procfile ]; then
+            echo "✓ Procfile found"
+            cat Procfile
+          else
+            echo "⚠ Procfile missing (optional if using Dockerfile)"
+          fi
+          
+          if [ -f Dockerfile ]; then
+            echo "✓ Dockerfile found"
+          else
+            echo "✗ Dockerfile missing"
+            exit 1
+          fi
+      
+      - name: Verify environment variables documentation
+        run: |
+          echo "Checking environment variables..."
+          if [ -f .env.example ]; then
+            echo "Required environment variables:"
+            grep -v "^#" .env.example | grep -v "^$" | cut -d= -f1
+          else
+            echo "✗ .env.example missing"
+            exit 1
+          fi
+      
+      - name: Check PORT environment variable handling
+        run: |
+          echo "Verifying PORT variable handling..."
+          
+          # Check Dockerfile
+          if grep -q '\${PORT' Dockerfile; then
+            echo "✓ Dockerfile uses PORT variable"
+          else
+            echo "✗ Dockerfile doesn't use PORT variable"
+            exit 1
+          fi
+          
+          # Check if settings.py exists and handles PORT
+          if [ -f config/settings.py ]; then
+            if grep -q "PORT" config/settings.py; then
+              echo "✓ settings.py handles PORT"
+            else
+              echo "⚠ settings.py might not handle PORT variable"
+            fi
+          fi
+      
+      - name: Deployment readiness summary
+        run: |
+          echo "==================================="
+          echo "Railway Deployment Readiness Check"
+          echo "==================================="
+          echo ""
+          echo "✓ Docker configuration valid"
+          echo "✓ Application starts successfully"
+          echo "✓ Health checks working"
+          echo "✓ Railway files present"
+          echo "✓ PORT handling configured"
+          echo ""
+          echo "Ready for Railway deployment! 🚀"
+          echo ""
+          echo "Next steps:"
+          echo "1. Set up Railway project"
+          echo "2. Add environment variables from .env.example"
+          echo "3. Deploy and monitor"
+
+  # Job 7: Integration Test Summary
+  test-summary:
+    name: Test Summary
+    runs-on: ubuntu-latest
+    needs: [validate-config, docker-build, test-application, test-docker-compose, security-check, railway-readiness]
+    if: always()
+    
+    steps:
+      - name: Check test results
+        run: |
+          echo "==================================="
+          echo "Deployment Test Suite Summary"
+          echo "==================================="
+          echo ""
+          echo "All tests completed!"
+          echo ""
+          echo "Test Results:"
+          echo "- Configuration Validation: ${{ needs.validate-config.result }}"
+          echo "- Docker Build: ${{ needs.docker-build.result }}"
+          echo "- Application Health: ${{ needs.test-application.result }}"
+          echo "- Docker Compose: ${{ needs.test-docker-compose.result }}"
+          echo "- Security Check: ${{ needs.security-check.result }}"
+          echo "- Railway Readiness: ${{ needs.railway-readiness.result }}"
+          echo ""
+          
+          if [ "${{ needs.validate-config.result }}" != "success" ] || \
+             [ "${{ needs.docker-build.result }}" != "success" ] || \
+             [ "${{ needs.test-application.result }}" != "success" ]; then
+            echo "⚠️  Some critical tests failed!"
+            echo "Please review the logs above to identify and fix issues."
+            exit 1
+          else
+            echo "✅ All critical tests passed!"
+            echo "The deployment system is working correctly."
+          fi
