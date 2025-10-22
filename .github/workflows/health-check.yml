@@ -1,0 +1,272 @@
+name: Production Health Check
+
+on:
+  schedule:
+    # Run every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      deployment_url:
+        description: 'Deployment URL to check'
+        required: true
+        default: 'https://your-app.railway.app'
+
+jobs:
+  health-check:
+    name: Check Deployment Health
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set deployment URL
+        id: set-url
+        run: |
+          if [ -n "${{ github.event.inputs.deployment_url }}" ]; then
+            URL="${{ github.event.inputs.deployment_url }}"
+          else
+            # Try to get from Railway or use environment variable
+            URL="${DEPLOYMENT_URL:-https://your-app.railway.app}"
+          fi
+          # Remove trailing slash
+          URL="${URL%/}"
+          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "Checking health of: $URL"
+      
+      - name: Check root endpoint
+        run: |
+          echo "Testing root endpoint..."
+          response=$(curl -s -w "\n%{http_code}" "${{ steps.set-url.outputs.url }}/")
+          http_code=$(echo "$response" | tail -n 1)
+          body=$(echo "$response" | head -n -1)
+          
+          if [ "$http_code" -eq 200 ]; then
+            echo "✓ Root endpoint: OK ($http_code)"
+            echo "$body" | jq '.' || echo "$body"
+          else
+            echo "✗ Root endpoint: FAILED ($http_code)"
+            echo "$body"
+            exit 1
+          fi
+      
+      - name: Check health endpoint
+        run: |
+          echo "Testing health endpoint..."
+          response=$(curl -s -w "\n%{http_code}" "${{ steps.set-url.outputs.url }}/api/v1/health")
+          http_code=$(echo "$response" | tail -n 1)
+          body=$(echo "$response" | head -n -1)
+          
+          if [ "$http_code" -eq 200 ]; then
+            echo "✓ Health endpoint: OK ($http_code)"
+            echo "$body" | jq '.' || echo "$body"
+            
+            # Check if status is healthy
+            if echo "$body" | jq -e '.status == "healthy"' > /dev/null 2>&1; then
+              echo "✓ Application status: healthy"
+            else
+              echo "⚠️  Application status: not healthy"
+              exit 1
+            fi
+          else
+            echo "✗ Health endpoint: FAILED ($http_code)"
+            echo "$body"
+            exit 1
+          fi
+      
+      - name: Check database connectivity
+        run: |
+          echo "Checking database connections..."
+          response=$(curl -s "${{ steps.set-url.outputs.url }}/api/v1/health")
+          
+          if echo "$response" | jq -e '.services.mongodb == "connected"' > /dev/null 2>&1; then
+            echo "✓ MongoDB: connected"
+          else
+            echo "⚠️  MongoDB: not connected"
+          fi
+          
+          if echo "$response" | jq -e '.services.redis == "connected"' > /dev/null 2>&1; then
+            echo "✓ Redis: connected"
+          else
+            echo "⚠️  Redis: not connected"
+          fi
+      
+      - name: Check API documentation
+        run: |
+          echo "Testing API documentation..."
+          http_code=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.set-url.outputs.url }}/api/v1/docs")
+          
+          if [ "$http_code" -eq 200 ]; then
+            echo "✓ API docs: accessible ($http_code)"
+          else
+            echo "✗ API docs: FAILED ($http_code)"
+            exit 1
+          fi
+      
+      - name: Check response time
+        run: |
+          echo "Measuring response time..."
+          
+          start_time=$(date +%s%N)
+          curl -s "${{ steps.set-url.outputs.url }}/api/v1/health" > /dev/null
+          end_time=$(date +%s%N)
+          
+          duration_ms=$(( (end_time - start_time) / 1000000 ))
+          
+          echo "Response time: ${duration_ms}ms"
+          
+          if [ $duration_ms -lt 3000 ]; then
+            echo "✓ Response time: acceptable"
+          elif [ $duration_ms -lt 10000 ]; then
+            echo "⚠️  Response time: slow"
+          else
+            echo "✗ Response time: too slow"
+            exit 1
+          fi
+      
+      - name: Test API endpoints
+        continue-on-error: true
+        run: |
+          echo "Testing critical API endpoints..."
+          
+          # Test API info
+          http_code=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.set-url.outputs.url }}/api/v1/info")
+          if [ "$http_code" -eq 200 ]; then
+            echo "✓ API info endpoint: OK"
+          else
+            echo "✗ API info endpoint: FAILED ($http_code)"
+          fi
+      
+      - name: Health check summary
+        if: success()
+        run: |
+          echo "==================================="
+          echo "Health Check Summary"
+          echo "==================================="
+          echo ""
+          echo "✅ All health checks passed!"
+          echo ""
+          echo "Deployment URL: ${{ steps.set-url.outputs.url }}"
+          echo "Check time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo ""
+          echo "Endpoints verified:"
+          echo "  - Root: /"
+          echo "  - Health: /api/v1/health"
+          echo "  - API Docs: /api/v1/docs"
+          echo "  - API Info: /api/v1/info"
+          echo ""
+      
+      - name: Create issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = '🚨 Deployment Health Check Failed';
+            const body = `
+            ## Health Check Failure Report
+            
+            **Time**: ${new Date().toUTCString()}
+            **Deployment URL**: ${{ steps.set-url.outputs.url }}
+            **Workflow Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            
+            ### Action Required
+            
+            The automated health check has detected issues with the deployment.
+            
+            Please investigate:
+            1. Check Railway logs for errors
+            2. Verify environment variables are set correctly
+            3. Check database connectivity
+            4. Verify all services are running
+            
+            ### Quick Checks
+            
+            \`\`\`bash
+            # Test health endpoint
+            curl https://your-app.railway.app/api/v1/health
+            
+            # Check Railway logs
+            railway logs
+            
+            # Verify environment variables
+            railway variables
+            \`\`\`
+            
+            ### Related Documentation
+            
+            - [Deployment Guide](./RAILWAY_DEPLOYMENT.md)
+            - [Troubleshooting](./README.md#troubleshooting)
+            `;
+            
+            // Check if an issue already exists
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: ['health-check', 'deployment']
+            });
+            
+            if (issues.data.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body,
+                labels: ['health-check', 'deployment', 'bug']
+              });
+            }
+
+  lighthouse-check:
+    name: Performance Check
+    runs-on: ubuntu-latest
+    needs: health-check
+    if: success()
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set deployment URL
+        id: set-url
+        run: |
+          if [ -n "${{ github.event.inputs.deployment_url }}" ]; then
+            URL="${{ github.event.inputs.deployment_url }}"
+          else
+            URL="${DEPLOYMENT_URL:-https://your-app.railway.app}"
+          fi
+          URL="${URL%/}"
+          echo "url=$URL" >> $GITHUB_OUTPUT
+      
+      - name: Run basic performance check
+        run: |
+          echo "==================================="
+          echo "Performance Metrics"
+          echo "==================================="
+          echo ""
+          
+          # Test multiple requests to get average
+          echo "Running 5 test requests..."
+          total_time=0
+          
+          for i in {1..5}; do
+            start=$(date +%s%N)
+            curl -s "${{ steps.set-url.outputs.url }}/api/v1/health" > /dev/null
+            end=$(date +%s%N)
+            duration=$(( (end - start) / 1000000 ))
+            echo "Request $i: ${duration}ms"
+            total_time=$((total_time + duration))
+          done
+          
+          avg_time=$((total_time / 5))
+          echo ""
+          echo "Average response time: ${avg_time}ms"
+          
+          if [ $avg_time -lt 1000 ]; then
+            echo "✓ Performance: excellent"
+          elif [ $avg_time -lt 3000 ]; then
+            echo "✓ Performance: good"
+          elif [ $avg_time -lt 5000 ]; then
+            echo "⚠️  Performance: acceptable"
+          else
+            echo "⚠️  Performance: needs improvement"
+          fi
