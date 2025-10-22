@@ -38,7 +38,9 @@ if [ $INSTALL_EXIT_CODE -ne 0 ]; then
             
             echo "Extracting Chromium..."
             unzip -q chromium.zip
-            mv chrome-linux "chromium-${CHROMIUM_VERSION}"
+            # Manter a estrutura de diretórios que o Playwright espera (chrome-linux dentro de chromium-VERSION)
+            mkdir -p "chromium-${CHROMIUM_VERSION}"
+            mv chrome-linux "chromium-${CHROMIUM_VERSION}/"
             rm chromium.zip
             
             echo "Chromium installed successfully to $BROWSER_DIR"

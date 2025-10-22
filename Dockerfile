@@ -20,6 +20,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgbm1 \
     libasound2 \
     libxshmfence1 \
+    libpango-1.0-0 \
+    libcairo2 \
     fonts-liberation \
     fonts-unifont \
     gcc \
