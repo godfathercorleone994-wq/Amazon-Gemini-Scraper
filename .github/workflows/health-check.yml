@@ -11,6 +11,10 @@ on:
         required: true
         default: 'https://your-app.railway.app'
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   health-check:
     name: Check Deployment Health
