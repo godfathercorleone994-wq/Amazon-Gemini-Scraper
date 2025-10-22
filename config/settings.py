@@ -79,7 +79,7 @@ class Settings(BaseModel):
     
     # Celery
     celery_broker_url: str = Field(default_factory=lambda: os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/1"))
-    celery_result_backend: str = Field(default="redis://localhost:6379/2")
+    celery_result_backend: str = Field(default_factory=lambda: os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/2"))
     celery_task_time_limit: int = Field(default=300)  # 5 minutes
     celery_task_soft_time_limit: int = Field(default=240)  # 4 minutes
     celery_worker_concurrency: int = Field(default=4)
