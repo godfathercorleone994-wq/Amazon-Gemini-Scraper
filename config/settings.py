@@ -24,7 +24,7 @@ class Settings(BaseModel):
     
     # Server
     host: str = Field(default="0.0.0.0")
-    port: int = Field(default=8000)
+    port: int = Field(default_factory=lambda: int(os.getenv("PORT", "8000")))
     workers: int = Field(default=4)
     reload: bool = Field(default=False)
     
