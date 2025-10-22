@@ -4,6 +4,7 @@ services:
     name: amazon-gemini-scraper
     runtime: docker
     plan: starter
+    region: oregon
     dockerfilePath: ./Dockerfile
     dockerContext: .
     envVars:
@@ -45,12 +46,10 @@ services:
         sync: false
     healthCheckPath: /api/v1/health
     autoDeploy: true
-    buildCommand: echo "Using Dockerfile for build"
-    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT --workers 4
 
 databases:
   # Redis Cache (optional - can also use external Redis)
   - name: amazon-scraper-redis
     plan: starter
-    databaseName: redis
-    user: redis
+    region: oregon
+    ipAllowList: []
