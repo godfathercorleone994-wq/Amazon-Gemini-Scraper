@@ -2,6 +2,8 @@
 
 Bot do Telegram para rastreamento de preços da Amazon com extração de dados alimentada por IA usando Google Gemini, OpenAI e outros provedores de IA.
 
+> 🇧🇷 **[Guia Rápido em Português](TELEGRAM_BOT_PT.md)** | 📖 **[Referência de Comandos](COMANDOS.md)**
+
 ## Features
 
 - 🤖 Extração de dados de produtos alimentada por IA usando Gemini, OpenAI e HuggingFace
