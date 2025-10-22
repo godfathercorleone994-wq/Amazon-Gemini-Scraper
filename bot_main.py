@@ -35,7 +35,6 @@ class AmazonScraperBot:
         
         self.token = settings.telegram_bot_token
         self.application = None
-        self.scraper = ScraperAgent()
         self.extractor = GeminiExtractor()
         
         logger.info("Amazon Scraper Bot initialized")
@@ -224,27 +223,30 @@ Seu Chat ID: `{chat_id}`
         )
         
         try:
-            # Scrape product
-            html_content = await self.scraper.scrape_url(url)
-            
-            if not html_content:
-                await processing_msg.edit_text(
-                    "❌ *Erro ao acessar o produto*\n\n"
-                    "Não foi possível acessar a página. Verifique o link.",
-                    parse_mode=ParseMode.MARKDOWN
-                )
-                return
-            
-            # Extract with AI
-            product_data = await self.extractor.extract(html_content, url)
-            
-            if not product_data:
-                await processing_msg.edit_text(
-                    "❌ *Erro ao extrair dados*\n\n"
-                    "Não foi possível extrair informações do produto.",
-                    parse_mode=ParseMode.MARKDOWN
-                )
-                return
+            # Initialize scraper
+            async with ScraperAgent() as scraper:
+                # Scrape product
+                result = await scraper.scrape_product(url)
+                
+                if result.status != "completed":
+                    await processing_msg.edit_text(
+                        "❌ *Erro ao acessar o produto*\n\n"
+                        f"Status: {result.status}\n"
+                        f"Erro: {result.error_message or 'Desconhecido'}",
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+                    return
+                
+                # Extract with AI
+                product_data = await self.extractor.extract(result.html_content, url)
+                
+                if not product_data:
+                    await processing_msg.edit_text(
+                        "❌ *Erro ao extrair dados*\n\n"
+                        "Não foi possível extrair informações do produto.",
+                        parse_mode=ParseMode.MARKDOWN
+                    )
+                    return
             
             # Format response
             response_text = f"""
@@ -350,9 +352,13 @@ Seu Chat ID: `{chat_id}`
             product_data = await redis_cache.get(f"product:{asin}")
             
             if not product_data:
-                html_content = await self.scraper.scrape_url(url)
-                product_data = await self.extractor.extract(html_content, url)
-                await redis_cache.set(f"product:{asin}", product_data, ttl=3600)
+                async with ScraperAgent() as scraper:
+                    result = await scraper.scrape_product(url)
+                    if result.status == "completed":
+                        product_data = await self.extractor.extract(result.html_content, url)
+                        await redis_cache.set(f"product:{asin}", product_data, ttl=3600)
+                    else:
+                        raise Exception(f"Failed to scrape: {result.error_message}")
             
             # Save tracking
             await db.trackings.insert_one({
@@ -360,16 +366,16 @@ Seu Chat ID: `{chat_id}`
                 "asin": asin,
                 "url": url,
                 "target_price": target_price,
-                "current_price": product_data.get('current_price'),
-                "title": product_data.get('title'),
+                "current_price": product_data.get('current_price') if product_data else None,
+                "title": product_data.get('title') if product_data else 'Unknown',
                 "is_active": True,
             })
             
             response_text = f"""
 ✅ *Produto Adicionado para Rastreamento!*
 
-📦 *{product_data.get('title', 'N/A')}*
-💰 Preço Atual: *${product_data.get('current_price', 'N/A')}*
+📦 *{product_data.get('title', 'N/A') if product_data else 'Produto'}*
+💰 Preço Atual: *${product_data.get('current_price', 'N/A') if product_data else 'N/A'}*
 🎯 Preço Alvo: *${target_price or 'Não definido'}*
 
 Você receberá notificações quando:

@@ -1,1 +1,1 @@
-web: uvicorn api.main:app --host 0.0.0.0 --port $PORT --workers 4
+worker: python bot_main.py
