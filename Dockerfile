@@ -1,4 +1,4 @@
-FROM python:3.0.13
+FROM python:3.14.0
 
 # --- Sistema básico + dependências Playwright ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
