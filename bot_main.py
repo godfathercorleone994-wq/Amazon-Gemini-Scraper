@@ -4,6 +4,10 @@ Amazon Product Scraper Bot for Telegram
 """
 import asyncio
 import sys
+import re
+from typing import Optional
+from urllib.parse import urlparse
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -13,8 +17,6 @@ from telegram.ext import (
     filters,
 )
 from telegram.constants import ParseMode
-from typing import Optional
-import re
 
 from config.settings import settings
 from utils.logger import logger
@@ -598,36 +600,53 @@ Use /list para ver seus produtos.
         """Handle text messages (URLs)"""
         text = update.message.text
         
-        # Check if it's an Amazon URL
-        if "amazon.com" in text.lower() or "amzn.to" in text.lower():
-            url_pattern = r'https?://[^\s]+'
-            urls = re.findall(url_pattern, text)
-            
-            if urls:
-                # Ask what to do
-                keyboard = [
-                    [
-                        InlineKeyboardButton("🔍 Extrair Dados", callback_data="action_scrape"),
-                        InlineKeyboardButton("🎯 Rastrear", callback_data=f"track_{self.extract_asin(urls[0]) or 'unknown'}")
-                    ]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                await update.message.reply_text(
-                    "🔗 *Link da Amazon detectado!*\n\n"
-                    "O que você gostaria de fazer?",
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=reply_markup
-                )
-                
-                # Store URL in context
-                context.user_data['last_url'] = urls[0]
-        else:
-            await update.message.reply_text(
-                "🤔 Não entendi seu comando.\n\n"
-                "Envie um link da Amazon ou use /help para ver os comandos disponíveis.",
-                parse_mode=ParseMode.MARKDOWN
-            )
+        # Check if it's an Amazon URL using proper URL parsing
+        url_pattern = r'https?://[^\s]+'
+        urls = re.findall(url_pattern, text)
+        
+        if urls:
+            for url in urls:
+                try:
+                    parsed = urlparse(url)
+                    # Check if domain is actually from Amazon (exact domain check)
+                    netloc_lower = parsed.netloc.lower()
+                    is_amazon = (
+                        netloc_lower == 'amazon.com' or
+                        netloc_lower.endswith('.amazon.com') or
+                        netloc_lower == 'amzn.to' or
+                        netloc_lower.endswith('.amzn.to') or
+                        netloc_lower == 'www.amazon.com'
+                    )
+                    if parsed.netloc and is_amazon:
+                        # Ask what to do
+                        keyboard = [
+                            [
+                                InlineKeyboardButton("🔍 Extrair Dados", callback_data="action_scrape"),
+                                InlineKeyboardButton("🎯 Rastrear", callback_data=f"track_{self.extract_asin(url) or 'unknown'}")
+                            ]
+                        ]
+                        reply_markup = InlineKeyboardMarkup(keyboard)
+                        
+                        await update.message.reply_text(
+                            "🔗 *Link da Amazon detectado!*\n\n"
+                            "O que você gostaria de fazer?",
+                            parse_mode=ParseMode.MARKDOWN,
+                            reply_markup=reply_markup
+                        )
+                        
+                        # Store URL in context
+                        context.user_data['last_url'] = url
+                        return
+                except Exception as e:
+                    logger.warning(f"Error parsing URL {url}: {e}")
+                    continue
+        
+        # If no valid Amazon URL found
+        await update.message.reply_text(
+            "🤔 Não entendi seu comando.\n\n"
+            "Envie um link da Amazon ou use /help para ver os comandos disponíveis.",
+            parse_mode=ParseMode.MARKDOWN
+        )
 
     def extract_asin(self, url: str) -> Optional[str]:
         """Extract ASIN from Amazon URL"""
