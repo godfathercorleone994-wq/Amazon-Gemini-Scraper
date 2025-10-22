@@ -4,6 +4,7 @@ FROM python:3.11-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     curl \
+    unzip \
     gnupg \
     libnss3 \
     libatk1.0-0 \
@@ -20,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libxshmfence1 \
     fonts-liberation \
+    fonts-unifont \
     gcc \
     g++ \
     python3-dev \
@@ -40,9 +42,12 @@ RUN pip install --no-cache-dir --trusted-host pypi.org --trusted-host pypi.pytho
 
 # --- Copiar código e instalar navegadores Playwright ---
 COPY . .
-ENV NODE_TLS_REJECT_UNAUTHORIZED=0
+COPY install_playwright.sh /tmp/install_playwright.sh
+RUN chmod +x /tmp/install_playwright.sh
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
-RUN playwright install chromium 2>&1 || echo "Browser install attempted"
+ENV NODE_TLS_REJECT_UNAUTHORIZED=0
+# Instalar navegadores usando script que trata o erro de progress bar
+RUN /tmp/install_playwright.sh
 
 EXPOSE 8000
 
