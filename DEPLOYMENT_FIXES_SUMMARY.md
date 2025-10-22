@@ -4,14 +4,19 @@ This document summarizes all the fixes applied to make the Amazon Gemini Scraper
 
 ## Issues Fixed
 
-### 1. ✅ Incomplete requirements.txt
-- **Problem**: Line 32 in requirements.txt was incomplete
-- **Solution**: Added missing dependencies:
-  - `gunicorn==21.2.0` - Production-grade WSGI server
-  - `psutil==5.9.6` - System monitoring for health checks
-  - `streamlit==1.28.0` - Dashboard functionality
-  - `plotly==5.17.0` - Data visualization
-  - `aiosmtplib==3.0.1` - Email notifications
+### 1. ✅ Incomplete requirements.txt and Security Updates
+- **Problem**: Line 32 in requirements.txt was incomplete, and several dependencies had security vulnerabilities
+- **Solution**: 
+  - Added missing dependencies:
+    - `gunicorn==22.0.0` - Production-grade WSGI server (updated from 21.2.0 to fix HTTP smuggling vulnerabilities)
+    - `psutil==5.9.6` - System monitoring for health checks
+    - `streamlit==1.28.0` - Dashboard functionality
+    - `plotly==5.17.0` - Data visualization
+    - `aiosmtplib==3.0.1` - Email notifications
+  - Updated vulnerable dependencies:
+    - `fastapi==0.109.1` (from 0.95.2) - Fixes ReDoS vulnerability
+    - `transformers==4.48.0` (from 4.35.0) - Fixes deserialization vulnerabilities
+  - Removed trailing newline to prevent potential issues with line-by-line installation scripts
 
 ### 2. ✅ PORT Environment Variable
 - **Problem**: App was hardcoded to port 8000, Railway needs dynamic PORT
@@ -82,6 +87,10 @@ This document summarizes all the fixes applied to make the Amazon Gemini Scraper
    - Added psutil for health checks
    - Added streamlit and plotly for dashboard
    - Added aiosmtplib for email notifications
+   - Updated fastapi to 0.109.1 (security fix)
+   - Updated transformers to 4.48.0 (security fix)
+   - Updated gunicorn to 22.0.0 (security fix)
+   - Removed trailing newline
 
 5. **.gitignore**
    - Removed .dockerignore from exclusions (it should be tracked)
