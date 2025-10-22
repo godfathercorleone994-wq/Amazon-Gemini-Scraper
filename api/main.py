@@ -15,7 +15,6 @@ from storage.mongodb_client import mongodb_client
 from storage.redis_cache import redis_cache
 from api.routes import scraping, analysis, health, notifications
 from api.middleware.rate_limit import RateLimitMiddleware
-from api.middleware.auth import AuthMiddleware
 
 # Prometheus metrics
 if settings.prometheus_enabled:
