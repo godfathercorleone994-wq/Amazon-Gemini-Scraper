@@ -138,4 +138,4 @@ screenshots/
 *.sqlite
 
 # Docker
-.dockerignore
+# .dockerignore should be tracked
