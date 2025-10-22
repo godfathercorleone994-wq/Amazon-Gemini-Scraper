@@ -34,7 +34,7 @@ passlib[bcrypt]==1.7.4            # Última versão principal
 
 # Mensageria e Fila
 celery==5.4.0
-python-telegram-bot==21.0
+python-telegram-bot==21.3
 discord-webhook==1.3.0 # Última versão principal
 sendgrid==6.12.0
 
