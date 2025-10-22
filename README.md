@@ -23,7 +23,7 @@ Advanced Amazon Product Scraper with AI-powered extraction using Google Gemini, 
 - **Database**: MongoDB (Atlas), Redis
 - **Task Queue**: Celery
 - **Monitoring**: Prometheus, Sentry
-- **Deployment**: Docker, Railway
+- **Deployment**: Docker, Railway, Render
 - **CI/CD**: GitHub Actions
 
 ## Quick Start
@@ -142,6 +142,48 @@ After deployment:
 - Check logs in Railway dashboard
 - Test health endpoint: `https://your-app.railway.app/api/v1/health`
 - Access API docs: `https://your-app.railway.app/api/v1/docs`
+
+## Render Deployment 🚀
+
+**Quick Start**: See [RENDER_QUICKSTART.md](RENDER_QUICKSTART.md) for 5-minute deployment guide.  
+**Full Guide**: See [RENDER_DEPLOYMENT.md](RENDER_DEPLOYMENT.md) for detailed instructions.
+
+### Quick Start with Render
+
+1. **Deploy with Blueprint (Recommended)**:
+   - Go to [Render Dashboard](https://dashboard.render.com)
+   - Click "New +" → "Blueprint"
+   - Connect your GitHub repository
+   - Render will detect `render.yaml` automatically
+   - Set required environment variables:
+     - `MONGODB_ATLAS_URI`
+     - `GEMINI_API_KEY`
+   - Click "Apply" to deploy
+
+2. **Manual Deployment**:
+   - Create a new Web Service
+   - Select Docker runtime
+   - Connect repository and configure environment variables
+   - Deploy!
+
+### What Render Provides
+
+- ✅ Automatic HTTPS/SSL certificates
+- ✅ Auto-scaling capabilities
+- ✅ Free tier available (with limitations)
+- ✅ Integrated Redis database option
+- ✅ Simple environment variable management
+- ✅ Built-in health checks
+- ✅ Automatic deployments on git push
+
+### Key Configuration Files
+
+- `render.yaml` - Infrastructure as Code configuration
+- `Dockerfile` - Docker build configuration
+- `RENDER_DEPLOYMENT.md` - Complete deployment guide
+- `RENDER_QUICKSTART.md` - 5-minute quick start guide
+
+**Important**: See [RENDER_DEPLOYMENT.md](RENDER_DEPLOYMENT.md) for complete instructions, troubleshooting, and best practices.
 
 ## API Endpoints
 

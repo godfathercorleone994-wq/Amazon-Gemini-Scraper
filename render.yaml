@@ -1,0 +1,56 @@
+services:
+  # Main Web Service
+  - type: web
+    name: amazon-gemini-scraper
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      - key: MONGODB_ATLAS_URI
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: HUGGINGFACE_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: DISCORD_WEBHOOK_URL
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_BUCKET_NAME
+        sync: false
+      - key: CELERY_BROKER_URL
+        sync: false
+      - key: CELERY_RESULT_BACKEND
+        sync: false
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    buildCommand: echo "Using Dockerfile for build"
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT --workers 4
+
+databases:
+  # Redis Cache (optional - can also use external Redis)
+  - name: amazon-scraper-redis
+    plan: starter
+    databaseName: redis
+    user: redis

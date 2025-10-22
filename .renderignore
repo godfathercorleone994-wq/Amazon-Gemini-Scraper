@@ -1,0 +1,84 @@
+# Render ignore file - files to exclude from deployment
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Documentation build
+docs/_build/
+
+# Git
+.git/
+.gitignore
+
+# CI/CD
+.github/
+
+# Local development
+docker-compose.yml
+docker-compose.*.yml
+.dockerignore
+
+# README files (keep main ones)
+RAILWAY_DEPLOYMENT.md
+DEPLOYMENT_FIXES_SUMMARY.md
+GITHUB_ACTIONS_SUMMARY.md
+SECURITY_FIXES.md
+
+# Scripts not needed in production
+verify_deployment.sh
+makefile
+
+# Storage directories (if local)
+storage/local/
+storage/temp/
