@@ -2,7 +2,7 @@
 FastAPI==0.111.0  # Versão mais recente
 uvicorn==0.30.1   # Versão mais recente
 gunicorn==22.0.0  # Última versão principal ainda é 22.0.0
-prometheus-fastapi-instrumentator==6.2.0
+prometheus-fastapi-instrumentator==7.1.0
 
 # Validação e Banco de Dados
 pydantic==2.8.2   # Grande atualização de Pydantic 1 para 2
