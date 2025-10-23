@@ -1,182 +1,410 @@
 """
-Rate limiting middleware
+Rate limiting middleware with Redis and fallback support
 """
-from fastapi import Request, HTTPException, status
+from fastapi import Request, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from typing import Dict, Tuple
+from typing import Dict, Tuple, Optional
 import time
 import hashlib
+from collections import defaultdict
+from enum import Enum
 
 from storage.redis_cache import redis_cache
 from config.settings import settings
 from utils.logger import logger
 
+
+class RateLimitStrategy(str, Enum):
+    """Rate limiting strategies"""
+    PER_IP = "per_ip"
+    PER_API_KEY = "per_api_key"
+    PER_USER = "per_user"
+    COMBINED = "combined"
+
+
+class EndpointRateLimit:
+    """Endpoint rate limit configuration"""
+    
+    def __init__(
+        self,
+        limit: int,
+        period: int,
+        strategy: RateLimitStrategy = RateLimitStrategy.COMBINED
+    ):
+        self.limit = limit
+        self.period = period
+        self.strategy = strategy
+
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """
-    Rate limiting middleware using Redis
+    Advanced rate limiting middleware with Redis and fallback support
     """
     
-    def __init__(self, app):
+    # Endpoint-specific rate limits
+    ENDPOINT_LIMITS = {
+        "/api/v1/scraping/scrape": EndpointRateLimit(10, 60),
+        "/api/v1/scraping/bulk": EndpointRateLimit(5, 60),
+        "/api/v1/scraping/search": EndpointRateLimit(20, 60),
+        "/api/v1/analysis/sentiment": EndpointRateLimit(10, 60),
+    }
+    
+    # Exempted endpoints (no rate limiting)
+    EXEMPTED_ENDPOINTS = {
+        "/",
+        "/api/v1/health",
+        "/api/v1/health/live",
+        "/api/v1/health/ready",
+        "/api/v1/docs",
+        "/api/v1/redoc",
+        "/api/v1/openapi.json",
+        "/api/v1/auth/login",
+        "/api/v1/auth/register",
+    }
+    
+    # Authentication endpoints with relaxed limits
+    AUTH_ENDPOINTS = {
+        "/api/v1/auth/login": EndpointRateLimit(5, 300),  # 5 attempts per 5 min
+        "/api/v1/auth/register": EndpointRateLimit(3, 3600),  # 3 per hour
+        "/api/v1/auth/forgot-password": EndpointRateLimit(3, 3600),  # 3 per hour
+    }
+    
+    def __init__(self, app, default_limit: int = None, default_period: int = None):
+        """
+        Initialize rate limiting middleware
+        
+        Args:
+            app: FastAPI application
+            default_limit: Default request limit
+            default_period: Default period in seconds
+        """
         super().__init__(app)
-        self.rate_limit = settings.api_rate_limit
-        self.rate_limit_period = settings.api_rate_limit_period
+        self.default_limit = default_limit or settings.api_rate_limit
+        self.default_period = default_period or settings.api_rate_limit_period
         
-        # Endpoints with custom limits
-        self.custom_limits = {
-            "/api/v1/scraping/scrape": (10, 60),  # 10 requests per minute
-            "/api/v1/scraping/bulk": (5, 60),      # 5 bulk requests per minute
-            "/api/v1/scraping/search": (20, 60),   # 20 searches per minute
-            "/api/v1/analysis/sentiment": (10, 60), # 10 sentiment analyses per minute
-        }
-        
-        # Exempted endpoints
-        self.exempted = [
-            "/",
-            "/api/v1/health",
-            "/api/v1/health/live",
-            "/api/v1/health/ready",
-            "/api/v1/docs",
-            "/api/v1/redoc",
-            "/api/v1/openapi.json"
-        ]
+        # In-memory fallback
+        self.memory_limiter = InMemoryRateLimiter()
+        self.use_fallback = False
     
     async def dispatch(self, request: Request, call_next):
         """
         Process request with rate limiting
+        
+        Args:
+            request: HTTP request
+            call_next: Next middleware/handler
+            
+        Returns:
+            Response with rate limit headers
         """
         # Skip rate limiting for exempted endpoints
-        if request.url.path in self.exempted:
-            return await call_next(request)
-        
-        # Skip if Redis is not available
-        if not redis_cache._initialized:
-            logger.warning("Redis not initialized, skipping rate limiting")
+        if self._is_exempted(request.url.path):
             return await call_next(request)
         
         try:
-            # Get client identifier
-            client_id = self.get_client_id(request)
-            
-            # Get rate limit for endpoint
-            limit, period = self.get_endpoint_limit(request.url.path)
+            # Get client identifier and rate limit config
+            client_id = self._get_client_id(request)
+            limit, period = self._get_endpoint_limit(request.url.path)
             
             # Check rate limit
-            is_allowed = await redis_cache.track_rate_limit(
-                identifier=client_id,
+            is_allowed = await self._check_rate_limit(
+                client_id=client_id,
                 limit=limit,
                 period=period
             )
             
             if not is_allowed:
-                # Get current status
-                status_info = await redis_cache.get_rate_limit_status(client_id)
-                
-                logger.warning(
-                    f"Rate limit exceeded for {client_id}",
-                    path=request.url.path,
-                    current=status_info["current"],
-                    limit=limit
-                )
-                
-                return JSONResponse(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    content={
-                        "error": "Rate limit exceeded",
-                        "message": f"Too many requests. Please try again in {status_info['remaining_time']} seconds",
-                        "limit": limit,
-                        "period": period,
-                        "retry_after": status_info["remaining_time"]
-                    },
-                    headers={
-                        "X-RateLimit-Limit": str(limit),
-                        "X-RateLimit-Remaining": str(max(0, limit - status_info["current"])),
-                        "X-RateLimit-Reset": str(int(time.time()) + status_info["remaining_time"]),
-                        "Retry-After": str(status_info["remaining_time"])
-                    }
+                return await self._handle_rate_limit_exceeded(
+                    client_id=client_id,
+                    limit=limit,
+                    period=period,
+                    path=request.url.path
                 )
             
             # Process request
             response = await call_next(request)
             
-            # Add rate limit headers
-            status_info = await redis_cache.get_rate_limit_status(client_id)
-            response.headers["X-RateLimit-Limit"] = str(limit)
-            response.headers["X-RateLimit-Remaining"] = str(max(0, limit - status_info["current"]))
-            response.headers["X-RateLimit-Reset"] = str(int(time.time()) + status_info["remaining_time"])
+            # Add rate limit headers to response
+            await self._add_rate_limit_headers(response, client_id, limit, period)
             
             return response
             
         except Exception as e:
-            logger.error(f"Rate limiting error: {str(e)}")
+            logger.error(f"Rate limiting error: {str(e)}", exc_info=True)
             # Continue without rate limiting on error
             return await call_next(request)
     
-    def get_client_id(self, request: Request) -> str:
+    def _is_exempted(self, path: str) -> bool:
+        """
+        Check if endpoint is exempted from rate limiting
+        
+        Args:
+            path: Request path
+            
+        Returns:
+            True if exempted, False otherwise
+        """
+        # Exact match
+        if path in self.EXEMPTED_ENDPOINTS:
+            return True
+        
+        # Check auth endpoints separately
+        if path in self.AUTH_ENDPOINTS:
+            return False
+        
+        return False
+    
+    def _get_client_id(self, request: Request) -> str:
         """
         Get unique client identifier
         
-        Uses API key if present, otherwise IP address
+        Prioritizes: API Key > User ID > IP Address
+        
+        Args:
+            request: HTTP request
+            
+        Returns:
+            Unique client identifier
         """
-        # Check for API key in headers
+        # 1. Check for API key (highest priority)
         api_key = request.headers.get("X-API-Key")
         if api_key:
-            return f"api_key:{hashlib.md5(api_key.encode()).hexdigest()}"
+            api_key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]
+            return f"key:{api_key_hash}"
         
-        # Use IP address
+        # 2. Check for user ID in request state (set by auth middleware)
+        if hasattr(request.state, "user_id") and request.state.user_id:
+            return f"user:{request.state.user_id}"
+        
+        # 3. Use IP address (fallback)
+        client_ip = self._get_client_ip(request)
+        return f"ip:{client_ip}"
+    
+    def _get_client_ip(self, request: Request) -> str:
+        """
+        Extract client IP address from request
+        
+        Args:
+            request: HTTP request
+            
+        Returns:
+            Client IP address
+        """
+        # Check X-Forwarded-For header (proxy)
         forwarded = request.headers.get("X-Forwarded-For")
         if forwarded:
-            ip = forwarded.split(",")[0].strip()
-        else:
-            ip = request.client.host if request.client else "unknown"
+            return forwarded.split(",")[0].strip()
         
-        # Include path to have per-endpoint limits
-        path_hash = hashlib.md5(request.url.path.encode()).hexdigest()[:8]
+        # Check X-Real-IP header
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip.strip()
         
-        return f"ip:{ip}:{path_hash}"
+        # Use client connection info
+        if request.client:
+            return request.client.host
+        
+        return "unknown"
     
-    def get_endpoint_limit(self, path: str) -> Tuple[int, int]:
+    def _get_endpoint_limit(self, path: str) -> Tuple[int, int]:
         """
-        Get rate limit for specific endpoint
+        Get rate limit configuration for endpoint
         
-        Returns (limit, period_seconds)
+        Args:
+            path: Request path
+            
+        Returns:
+            Tuple of (limit, period_seconds)
         """
-        # Check for custom limit
-        for endpoint, limits in self.custom_limits.items():
-            if path.startswith(endpoint):
-                return limits
+        # Check exact endpoint match first
+        if path in self.AUTH_ENDPOINTS:
+            config = self.AUTH_ENDPOINTS[path]
+            return (config.limit, config.period)
+        
+        # Check custom limits with prefix matching
+        for endpoint_pattern, config in self.ENDPOINT_LIMITS.items():
+            if path.startswith(endpoint_pattern):
+                return (config.limit, config.period)
         
         # Return default limit
-        return (self.rate_limit, self.rate_limit_period)
+        return (self.default_limit, self.default_period)
+    
+    async def _check_rate_limit(
+        self,
+        client_id: str,
+        limit: int,
+        period: int
+    ) -> bool:
+        """
+        Check if request is within rate limit
+        
+        Args:
+            client_id: Client identifier
+            limit: Request limit
+            period: Time period in seconds
+            
+        Returns:
+            True if request allowed, False otherwise
+        """
+        # Try Redis first
+        if redis_cache._initialized:
+            try:
+                return await redis_cache.track_rate_limit(
+                    identifier=client_id,
+                    limit=limit,
+                    period=period
+                )
+            except Exception as e:
+                logger.warning(f"Redis rate limit check failed: {str(e)}, using fallback")
+                self.use_fallback = True
+        
+        # Fall back to in-memory limiter
+        return self.memory_limiter.is_allowed(client_id, limit, period)
+    
+    async def _handle_rate_limit_exceeded(
+        self,
+        client_id: str,
+        limit: int,
+        period: int,
+        path: str
+    ) -> JSONResponse:
+        """
+        Handle rate limit exceeded response
+        
+        Args:
+            client_id: Client identifier
+            limit: Request limit
+            period: Time period
+            path: Request path
+            
+        Returns:
+            JSON error response
+        """
+        logger.warning(
+            f"Rate limit exceeded",
+            client_id=client_id,
+            path=path,
+            limit=limit
+        )
+        
+        # Get remaining time
+        remaining_time = await self._get_remaining_time(client_id, period)
+        
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content={
+                "error": "rate_limit_exceeded",
+                "message": f"Too many requests. Please try again in {remaining_time} seconds",
+                "limit": limit,
+                "period": period,
+                "retry_after": remaining_time
+            },
+            headers={
+                "X-RateLimit-Limit": str(limit),
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset": str(int(time.time()) + remaining_time),
+                "Retry-After": str(remaining_time)
+            }
+        )
+    
+    async def _get_remaining_time(self, client_id: str, period: int) -> int:
+        """
+        Get remaining time until rate limit reset
+        
+        Args:
+            client_id: Client identifier
+            period: Time period in seconds
+            
+        Returns:
+            Remaining time in seconds
+        """
+        if redis_cache._initialized:
+            try:
+                status_info = await redis_cache.get_rate_limit_status(client_id)
+                return status_info.get("remaining_time", period)
+            except Exception:
+                pass
+        
+        return period
+    
+    async def _add_rate_limit_headers(
+        self,
+        response,
+        client_id: str,
+        limit: int,
+        period: int
+    ) -> None:
+        """
+        Add rate limit headers to response
+        
+        Args:
+            response: HTTP response
+            client_id: Client identifier
+            limit: Request limit
+            period: Time period
+        """
+        try:
+            if redis_cache._initialized:
+                status_info = await redis_cache.get_rate_limit_status(client_id)
+                current = status_info.get("current", 0)
+                remaining_time = status_info.get("remaining_time", period)
+            else:
+                current = self.memory_limiter.get_request_count(client_id, period)
+                remaining_time = period
+            
+            remaining = max(0, limit - current)
+            reset_time = int(time.time()) + remaining_time
+            
+            response.headers["X-RateLimit-Limit"] = str(limit)
+            response.headers["X-RateLimit-Remaining"] = str(remaining)
+            response.headers["X-RateLimit-Reset"] = str(reset_time)
+            
+        except Exception as e:
+            logger.error(f"Error adding rate limit headers: {str(e)}")
 
-class IPRateLimiter:
+
+class InMemoryRateLimiter:
     """
-    Simple in-memory rate limiter (backup when Redis is unavailable)
+    In-memory rate limiter (fallback when Redis unavailable)
+    
+    Uses a sliding window approach with automatic cleanup
     """
     
-    def __init__(self):
-        self.requests = {}
-        self.cleanup_interval = 60  # Clean old entries every minute
+    def __init__(self, cleanup_interval: int = 300):
+        """
+        Initialize in-memory rate limiter
+        
+        Args:
+            cleanup_interval: Cleanup interval in seconds
+        """
+        self.requests: Dict[str, list] = defaultdict(list)
+        self.cleanup_interval = cleanup_interval
         self.last_cleanup = time.time()
     
     def is_allowed(self, client_id: str, limit: int, period: int) -> bool:
         """
-        Check if request is allowed
+        Check if request is allowed using sliding window
+        
+        Args:
+            client_id: Client identifier
+            limit: Request limit
+            period: Time period in seconds
+            
+        Returns:
+            True if request allowed, False otherwise
         """
         now = time.time()
         
-        # Cleanup old entries periodically
+        # Periodic cleanup
         if now - self.last_cleanup > self.cleanup_interval:
-            self.cleanup(now)
+            self._cleanup(now)
         
-        # Get client's request history
-        if client_id not in self.requests:
-            self.requests[client_id] = []
-        
-        # Remove old requests outside the period
+        # Remove requests outside the period
+        cutoff_time = now - period
         self.requests[client_id] = [
             timestamp for timestamp in self.requests[client_id]
-            if now - timestamp < period
+            if timestamp > cutoff_time
         ]
         
         # Check if under limit
@@ -186,23 +414,107 @@ class IPRateLimiter:
         
         return False
     
-    def cleanup(self, now: float):
+    def get_request_count(self, client_id: str, period: int) -> int:
         """
-        Clean up old entries
-        """
-        max_period = 3600  # Keep entries for max 1 hour
+        Get current request count for client
         
-        for client_id in list(self.requests.keys()):
+        Args:
+            client_id: Client identifier
+            period: Time period in seconds
+            
+        Returns:
+            Number of requests in current period
+        """
+        now = time.time()
+        cutoff_time = now - period
+        
+        return len([
+            t for t in self.requests.get(client_id, [])
+            if t > cutoff_time
+        ])
+    
+    def _cleanup(self, now: float) -> None:
+        """
+        Clean up old entries to free memory
+        
+        Args:
+            now: Current time
+        """
+        max_age = 3600  # Keep data for max 1 hour
+        cutoff_time = now - max_age
+        
+        clients_to_remove = []
+        
+        for client_id, timestamps in self.requests.items():
+            # Filter old requests
             self.requests[client_id] = [
-                timestamp for timestamp in self.requests[client_id]
-                if now - timestamp < max_period
+                t for t in timestamps if t > cutoff_time
             ]
             
-            # Remove client if no recent requests
+            # Mark for removal if empty
             if not self.requests[client_id]:
-                del self.requests[client_id]
+                clients_to_remove.append(client_id)
+        
+        # Remove empty entries
+        for client_id in clients_to_remove:
+            del self.requests[client_id]
         
         self.last_cleanup = now
+        
+        logger.debug(
+            f"Rate limiter cleanup completed",
+            clients_tracked=len(self.requests),
+            clients_removed=len(clients_to_remove)
+        )
+    
+    def reset(self, client_id: Optional[str] = None) -> None:
+        """
+        Reset rate limit for client(s)
+        
+        Args:
+            client_id: Client ID to reset (None to reset all)
+        """
+        if client_id:
+            if client_id in self.requests:
+                del self.requests[client_id]
+        else:
+            self.requests.clear()
 
-# Global in-memory rate limiter (backup)
-memory_rate_limiter = IPRateLimiter()
+
+class DynamicRateLimiter:
+    """
+    Dynamic rate limiter that adjusts limits based on system load
+    """
+    
+    def __init__(self, base_limit: int, min_limit: int = 5, max_limit: int = None):
+        """
+        Initialize dynamic rate limiter
+        
+        Args:
+            base_limit: Base request limit
+            min_limit: Minimum allowed limit
+            max_limit: Maximum allowed limit
+        """
+        self.base_limit = base_limit
+        self.min_limit = min_limit
+        self.max_limit = max_limit or base_limit * 2
+        self.load_factor = 1.0
+    
+    def set_load_factor(self, factor: float) -> None:
+        """
+        Set system load factor (0.0 - 2.0)
+        
+        Args:
+            factor: Load factor (1.0 = normal, 0.5 = half capacity, 2.0 = double capacity)
+        """
+        self.load_factor = max(0.0, min(2.0, factor))
+    
+    def get_current_limit(self) -> int:
+        """
+        Get current rate limit based on load
+        
+        Returns:
+            Adjusted request limit
+        """
+        adjusted = int(self.base_limit * self.load_factor)
+        return max(self.min_limit, min(self.max_limit, adjusted))
